@@ -1,0 +1,53 @@
+# Terraform state and plans
+terraform/.terraform/
+terraform/*.tfplan
+terraform/tfplan
+terraform/*.tfstate
+terraform/*.tfstate.backup
+terraform/.terraform.lock.hcl
+
+# Sensitive variable files
+terraform/terraform.tfvars.local
+*.auto.tfvars
+secrets.yaml
+.env
+.env.*
+!.env.example
+
+# Go build artifacts
+*/bin/
+*/vendor/
+services/*/*.out
+services/*/coverage.out
+
+# Load testing output
+*.html
+*.csv
+load-test-results*/
+spike-test-results*/
+locust_*.log
+
+# Docker
+.dockerignore
+
+# IDE / OS files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Kubernetes local configs
+kubeconfig
+*.kubeconfig
+
+# Credentials (NEVER commit these)
+*.pem
+*.key
+*.crt
+service-account*.json
+gcp-credentials.json

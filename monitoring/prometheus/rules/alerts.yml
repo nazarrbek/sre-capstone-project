@@ -1,0 +1,158 @@
+groups:
+  # ─── SLO Alerting ────────────────────────────────────────────────────────────
+  - name: slo_alerts
+    interval: 30s
+    rules:
+      # Availability SLO: 99.9% uptime (≤ 43.8 min/month error budget)
+      - alert: AvailabilitySLOBreach
+        expr: |
+          (
+            sum(rate(http_requests_total{status_code=~"5.."}[5m]))
+            /
+            sum(rate(http_requests_total[5m]))
+          ) > 0.001
+        for: 2m
+        labels:
+          severity: critical
+          slo: availability
+        annotations:
+          summary: "Availability SLO breach: error rate > 0.1%"
+          description: "Error rate is {{ $value | humanizePercentage }} over the last 5m. SLO budget at risk."
+          runbook: "https://github.com/org/sre-capstone/wiki/runbooks/availability-slo"
+
+      # Latency SLO: p99 < 500ms
+      - alert: LatencySLOBreach
+        expr: |
+          histogram_quantile(0.99,
+            sum(rate(http_request_duration_seconds_bucket[5m])) by (le, service)
+          ) > 0.5
+        for: 3m
+        labels:
+          severity: warning
+          slo: latency
+        annotations:
+          summary: "Latency SLO breach: p99 > 500ms for {{ $labels.service }}"
+          description: "p99 latency is {{ $value | humanizeDuration }} for {{ $labels.service }}"
+
+      # Latency SLO critical: p99 > 1s
+      - alert: LatencySLOCritical
+        expr: |
+          histogram_quantile(0.99,
+            sum(rate(http_request_duration_seconds_bucket[5m])) by (le, service)
+          ) > 1.0
+        for: 2m
+        labels:
+          severity: critical
+          slo: latency
+        annotations:
+          summary: "Latency SLO CRITICAL: p99 > 1s for {{ $labels.service }}"
+          description: "Service {{ $labels.service }} is severely degraded. p99={{ $value | humanizeDuration }}"
+
+  # ─── Service Health ───────────────────────────────────────────────────────────
+  - name: service_health
+    rules:
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Service {{ $labels.job }} is DOWN"
+          description: "Prometheus target {{ $labels.instance }} ({{ $labels.job }}) has been unreachable for > 1 minute."
+
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(http_requests_total{status_code=~"5.."}[5m])) by (service)
+          /
+          sum(rate(http_requests_total[5m])) by (service)
+          > 0.05
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High error rate on {{ $labels.service }}"
+          description: "Error rate {{ $value | humanizePercentage }} exceeds 5% threshold on {{ $labels.service }}"
+
+      - alert: NoTraffic
+        expr: |
+          sum(rate(http_requests_total[5m])) by (job) == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "No traffic to {{ $labels.job }}"
+          description: "Service {{ $labels.job }} received no requests in the last 5 minutes."
+
+  # ─── Infrastructure ───────────────────────────────────────────────────────────
+  - name: infrastructure
+    rules:
+      - alert: HighCPUUsage
+        expr: |
+          100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU on {{ $labels.instance }}"
+          description: "CPU usage is {{ $value | humanize }}% on {{ $labels.instance }}"
+
+      - alert: HighMemoryUsage
+        expr: |
+          (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory on {{ $labels.instance }}"
+          description: "Memory usage {{ $value | humanize }}% on {{ $labels.instance }}"
+
+      - alert: DiskSpaceLow
+        expr: |
+          (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100 < 15
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low disk space on {{ $labels.instance }}"
+          description: "Only {{ $value | humanize }}% disk space remaining"
+
+  # ─── Database ─────────────────────────────────────────────────────────────────
+  - name: database
+    rules:
+      - alert: PostgresDown
+        expr: pg_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "PostgreSQL is DOWN"
+          description: "PostgreSQL instance is unreachable. All services dependent on the DB will fail."
+
+      - alert: PostgresHighConnections
+        expr: |
+          pg_stat_activity_count / pg_settings_max_connections > 0.8
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "PostgreSQL connections at {{ $value | humanizePercentage }}"
+          description: "Connection pool nearly exhausted. Consider scaling or increasing max_connections."
+
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Redis is DOWN"
+          description: "Redis cache is unreachable."
+
+      - alert: RedisHighMemory
+        expr: |
+          redis_memory_used_bytes / redis_memory_max_bytes > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Redis memory > 90%"
+          description: "Redis is using {{ $value | humanizePercentage }} of max memory. Eviction risk."

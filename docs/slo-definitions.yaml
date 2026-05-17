@@ -1,0 +1,140 @@
+# SRE Capstone — SLO & SLI Definitions
+# =========================================
+# Service: E-Commerce Platform
+# Owner: SRE Team
+# Effective Date: 2026-05-17
+# Review Cycle: Quarterly
+
+# ─── SLI 1: Availability ──────────────────────────────────────────────────────
+# Definition:
+#   The fraction of HTTP requests that return a non-5xx response.
+#   Formula: (total_requests - 5xx_requests) / total_requests
+#
+# Measurement Window: 28-day rolling
+#
+# PromQL (SLI query):
+#   1 - (
+#     sum(rate(http_requests_total{status_code=~"5.."}[28d]))
+#     / sum(rate(http_requests_total[28d]))
+#   )
+#
+# SLO Target: 99.9%  (≤ 43.8 min downtime/month)
+# Error Budget: 0.1% = 43.8 min/month
+
+---
+availability_slo:
+  name: "API Availability"
+  description: "Percentage of successful (non-5xx) HTTP responses"
+  sli:
+    good_events: "http_requests_total where status_code != 5xx"
+    total_events: "http_requests_total"
+  slo:
+    target: 0.999
+    window: "28d"
+  error_budget:
+    total_minutes: 40320   # 28 days
+    allowed_minutes: 40.3  # 0.1% of 28 days
+  burn_rate_alerts:
+    - window: "1h"
+      burn_rate: 14.4      # Burn 14.4x normal = depletes budget in 2h
+      severity: critical
+      action: "Page on-call immediately"
+    - window: "6h"
+      burn_rate: 6.0
+      severity: warning
+      action: "Notify team"
+    - window: "24h"
+      burn_rate: 3.0
+      severity: info
+      action: "Weekly review"
+
+# ─── SLI 2: Latency ───────────────────────────────────────────────────────────
+# Definition:
+#   The fraction of requests served within a defined latency threshold.
+#   We use a multi-threshold approach for different request types.
+#
+# PromQL (SLI query):
+#   histogram_quantile(0.99,
+#     sum(rate(http_request_duration_seconds_bucket[5m])) by (le)
+#   )
+#
+# SLO Targets:
+#   p50  < 100ms  (99.9% of rolling 28d)
+#   p90  < 300ms  (99.9% of rolling 28d)
+#   p99  < 500ms  (99.5% of rolling 28d)
+#   p999 < 1000ms (99.0% of rolling 28d)
+
+latency_slo:
+  name: "API Latency"
+  description: "Request latency must stay within defined thresholds"
+  sli:
+    measurement: "histogram_quantile over http_request_duration_seconds_bucket"
+  targets:
+    - percentile: p50
+      threshold_ms: 100
+      slo_target: 0.999
+      window: "28d"
+    - percentile: p90
+      threshold_ms: 300
+      slo_target: 0.999
+      window: "28d"
+    - percentile: p99
+      threshold_ms: 500
+      slo_target: 0.995
+      window: "28d"
+    - percentile: p999
+      threshold_ms: 1000
+      slo_target: 0.990
+      window: "28d"
+
+# ─── SLI 3: Throughput (Saturation) ──────────────────────────────────────────
+# Definition:
+#   System can handle target request rate without degradation.
+#
+# SLO Target: Handle 500 req/s with < 1% error rate
+throughput_slo:
+  name: "Throughput"
+  description: "System sustains target request rate without degradation"
+  sli:
+    measurement: "rate(http_requests_total[5m])"
+    error_rate_during_peak: "rate(http_requests_total{status_code=~'5..'}[5m]) / rate(http_requests_total[5m])"
+  targets:
+    - sustained_rps: 500
+      max_error_rate: 0.01
+      slo_target: 0.999
+      window: "28d"
+
+# ─── SLI 4: Freshness (Data Currency) ────────────────────────────────────────
+freshness_slo:
+  name: "Data Freshness"
+  description: "Product catalog updates are reflected within acceptable delay"
+  sli:
+    measurement: "Time between product update and API reflection"
+  targets:
+    - max_delay_seconds: 5
+      slo_target: 0.999
+      window: "28d"
+
+# ─── Error Budget Policy ──────────────────────────────────────────────────────
+error_budget_policy:
+  thresholds:
+    - remaining: ">= 50%"
+      action: "Normal operations, unrestricted feature deployments"
+    - remaining: "25-50%"
+      action: "Review deployment frequency; require extra testing"
+    - remaining: "10-25%"
+      action: "Freeze non-critical deployments; SRE review required for all changes"
+    - remaining: "< 10%"
+      action: "FREEZE all deployments; focus only on reliability improvements"
+    - remaining: "0% (depleted)"
+      action: "Incident post-mortem required; reliability work prioritized over features"
+
+# ─── SLO Review Process ──────────────────────────────────────────────────────
+review_process:
+  frequency: quarterly
+  participants: ["SRE team", "Product team", "Engineering leads"]
+  agenda:
+    - "Review SLI/SLO achievement for last quarter"
+    - "Error budget consumption analysis"
+    - "Adjust targets based on user expectations"
+    - "Plan reliability improvements"
