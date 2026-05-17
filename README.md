@@ -1,8 +1,7 @@
 # SRE Capstone — E-Commerce Platform Production Readiness Review
 
-> **Endterm & Final Exam:** SRE Capstone Project  
-> **Score:** 100 points  
-> **Team:** [Your Team Names]
+> **Endterm & Final Exam:** SRE Capstone Project   
+> **Team:** [BEK]
 
 ## 🏗 Architecture Overview
 
